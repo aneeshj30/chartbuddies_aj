@@ -1,7 +1,11 @@
 -- Create a function that can be called from the client to create a user profile
 -- This function uses SECURITY DEFINER to bypass RLS, so it can create profiles even if the user isn't fully authenticated yet
 
-CREATE OR REPLACE FUNCTION create_user_profile_safe(
+-- Drop the function first if it exists (in case return type changed)
+DROP FUNCTION IF EXISTS create_user_profile_safe(UUID, TEXT, TEXT);
+
+-- Create the function with UUID return type
+CREATE FUNCTION create_user_profile_safe(
   p_user_id UUID,
   p_email TEXT,
   p_full_name TEXT DEFAULT NULL
