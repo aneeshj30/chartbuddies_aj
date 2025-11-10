@@ -18,11 +18,25 @@
      - Custom instructions field for vital signs (e.g., "BP (sprinkle salt on food if BP low <80/60)")
 
 2. **Environment Variables:**
-   Make sure you have these in your `.env.local`:
+   
+   **For Local Development:**
+   Create a `.env.local` file in the project root with:
    ```
-   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   NEXT_PUBLIC_SUPABASE_URL=your_development_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_development_anon_key
+   NEXT_PUBLIC_ENV=development
    ```
+   
+   **For Production (Vercel):**
+   Set these in Vercel Dashboard > Settings > Environment Variables:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your_production_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_production_anon_key
+   NEXT_PUBLIC_ENV=production
+   ```
+   
+   ⚠️ **Important:** Use separate Supabase projects for development and production!
+   See `ENVIRONMENT_SETUP.md` for detailed setup instructions.
 
 ## Features Implemented
 
