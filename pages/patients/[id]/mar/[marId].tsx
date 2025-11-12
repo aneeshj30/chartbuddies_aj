@@ -1077,7 +1077,6 @@ export default function ViewMARForm() {
                 </div>
               </div>
             </div>
-          )}
 
         </div>
       </div>
