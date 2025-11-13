@@ -43,9 +43,9 @@ BEGIN
   SET 
     hospital_id = p_hospital_id,
     role = p_role,
-    full_name = COALESCE(p_full_name, full_name),
+    full_name = COALESCE(p_full_name, user_profiles.full_name),
     updated_at = NOW()
-  WHERE id = p_user_id;
+  WHERE user_profiles.id = p_user_id;
   
   RETURN TRUE;
 END;
