@@ -42,6 +42,9 @@ export default function Login() {
     }
 
     if (data.user) {
+      // Wait a moment for any triggers to complete
+      await new Promise(resolve => setTimeout(resolve, 300))
+      
       let profile = await getCurrentUserProfile()
       
       // If profile doesn't exist, try to create it using the function (bypasses RLS)
@@ -73,21 +76,28 @@ export default function Login() {
             
             if (createError) {
               console.error('Failed to create profile:', createError)
-              setError('User profile not found. Please contact administrator.')
-              setLoading(false)
-              return
+              // If it's a duplicate key error, the profile exists - try to fetch it again
+              if (createError.code === '23505' || createError.message?.includes('duplicate')) {
+                console.log('Profile already exists, retrying fetch...')
+                await new Promise(resolve => setTimeout(resolve, 500))
+                profile = await getCurrentUserProfile()
+              } else {
+                setError('User profile not found. Please contact administrator.')
+                setLoading(false)
+                return
+              }
             }
           } else {
             console.error('Failed to create profile via function:', functionError)
-            setError('User profile not found. Please contact administrator.')
-            setLoading(false)
-            return
+            // Don't fail immediately - try fetching again
+            await new Promise(resolve => setTimeout(resolve, 500))
+            profile = await getCurrentUserProfile()
           }
+        } else {
+          // Function succeeded, wait and retry
+          await new Promise(resolve => setTimeout(resolve, 500))
+          profile = await getCurrentUserProfile()
         }
-        
-        // Wait a moment for the profile to be created, then retry
-        await new Promise(resolve => setTimeout(resolve, 500))
-        profile = await getCurrentUserProfile()
         
         // If still no profile, try one more time
         if (!profile) {
