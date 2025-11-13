@@ -17,6 +17,8 @@ export default function Signup() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [emailSent, setEmailSent] = useState('')
   const [step, setStep] = useState(1) // 1: Account info, 2: Hospital info
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -262,8 +264,14 @@ export default function Signup() {
               throw new Error('Failed to set up admin access. Please contact support.')
             }
             
-            // Skip to redirect
-            router.push('/dashboard')
+            // Check if we have a session
+            if (currentSession) {
+              router.push('/dashboard')
+            } else {
+              setEmailSent(formData.email)
+              setSuccess(true)
+              setLoading(false)
+            }
             return
           }
           throw new Error(hospitalError.message || 'Failed to create hospital. Please try again or contact support.')
@@ -315,8 +323,17 @@ export default function Signup() {
         }
       }
 
-      // Redirect to dashboard
-      router.push('/dashboard')
+      // Check if we have a session (email confirmation might be disabled)
+      if (currentSession) {
+        // User is logged in, redirect to dashboard
+        router.push('/dashboard')
+      } else {
+        // Email confirmation required - show success message
+        setEmailSent(formData.email)
+        setSuccess(true)
+        setLoading(false)
+        // Don't redirect - show the success message
+      }
     } catch (err: any) {
       console.error('Signup error:', err)
       setError(err.message || 'Database error saving new user')
@@ -348,6 +365,59 @@ export default function Signup() {
           {error && (
             <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
               <p className="text-red-800 dark:text-red-200 text-sm">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3 flex-1">
+                  <h3 className="text-sm font-medium text-green-800 dark:text-green-200">
+                    Account Created Successfully!
+                  </h3>
+                  <div className="mt-2 text-sm text-green-700 dark:text-green-300">
+                    <p className="mb-2">
+                      We've sent a verification email to <strong>{emailSent}</strong>
+                    </p>
+                    <p className="mb-3">
+                      Please check your email and click the verification link to activate your account.
+                    </p>
+                    <p className="text-xs text-green-600 dark:text-green-400">
+                      Didn't receive the email? Check your spam folder or{' '}
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { error } = await supabase.auth.resend({
+                              type: 'signup',
+                              email: emailSent
+                            })
+                            if (error) throw error
+                            alert('Verification email resent! Please check your inbox.')
+                          } catch (err: any) {
+                            alert(`Failed to resend email: ${err.message}`)
+                          }
+                        }}
+                        className="underline font-medium hover:text-green-800 dark:hover:text-green-100"
+                      >
+                        resend verification email
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <button
+                  onClick={() => router.push('/auth/login')}
+                  className="text-sm text-green-700 dark:text-green-300 hover:text-green-800 dark:hover:text-green-100 font-medium underline"
+                >
+                  Go to Login Page
+                </button>
+              </div>
             </div>
           )}
 
