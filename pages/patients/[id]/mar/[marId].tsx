@@ -184,6 +184,8 @@ export default function ViewMARForm() {
     hour: string
     notes: string | null
     initials: string
+    frequency: number
+    times?: string[] // Optional array of times for each frequency
   }) => {
     if (!userProfile || !marForm || !isEditing || !marFormId) return
     
@@ -191,24 +193,37 @@ export default function ViewMARForm() {
       setSaving(true)
       setError('')
       
-      // Insert medication
-      const { data: newMed, error: medError } = await supabase
-        .from('mar_medications')
-        .insert({
+      const frequency = medData.frequency || 1
+      const times = medData.times || []
+      
+      // Create array of medications to insert
+      const medicationsToInsert = []
+      
+      for (let i = 0; i < frequency; i++) {
+        // Use provided time for this frequency, or default hour for first one
+        const hour = times[i] || (i === 0 ? medData.hour : medData.hour)
+        
+        medicationsToInsert.push({
           mar_form_id: marFormId,
           medication_name: medData.medicationName,
           dosage: medData.dosage,
           start_date: medData.startDate,
           stop_date: medData.stopDate,
-          hour: medData.hour,
+          hour: hour,
           notes: medData.notes
         })
+      }
+      
+      // Insert all medications
+      const { data: newMeds, error: medError } = await supabase
+        .from('mar_medications')
+        .insert(medicationsToInsert)
         .select()
-        .single()
 
       if (medError) throw medError
+      if (!newMeds || newMeds.length === 0) throw new Error('Failed to create medications')
 
-      // Populate initials for the START DATE of the medication
+      // Populate initials for the START DATE of each medication
       // If start date is Nov 1, populate column 1
       // If start date is Nov 25, populate column 25
       // This is dynamic based on the start date the nurse selects
@@ -232,20 +247,22 @@ export default function ViewMARForm() {
           try {
             const testDate = new Date(formYear, formMonthIndex, startDay)
             if (testDate.getDate() === startDay && testDate.getMonth() === formMonthIndex) {
-              // Create administration record for the start date only
+              // Create administration records for the start date for each medication
+              const adminRecords = newMeds.map(med => ({
+                mar_medication_id: med.id,
+                day_number: startDay, // Use the parsed day directly
+                status: 'Given',
+                initials: medData.initials,
+                administered_at: new Date().toISOString()
+              }))
+              
               const { error: adminError } = await supabase
                 .from('mar_administrations')
-                .insert({
-                  mar_medication_id: newMed.id,
-                  day_number: startDay, // Use the parsed day directly
-                  status: 'Given',
-                  initials: medData.initials,
-                  administered_at: new Date().toISOString()
-                })
+                .insert(adminRecords)
 
               if (adminError) {
                 console.error('Error creating administration for start date:', adminError)
-                // Don't throw - medication was created successfully
+                // Don't throw - medications were created successfully
               }
             }
           } catch (e) {
@@ -256,7 +273,8 @@ export default function ViewMARForm() {
 
       await loadMARForm()
       const displayDay = startDateParts.length === 3 ? parseInt(startDateParts[2], 10) : 'N/A'
-      setMessage(`Medication added successfully! Initials "${medData.initials}" recorded for start date (day ${displayDay}).`)
+      const freqMessage = frequency > 1 ? ` (${frequency} times per day)` : ''
+      setMessage(`Medication added successfully${freqMessage}! Initials "${medData.initials}" recorded for start date (day ${displayDay}).`)
       setTimeout(() => setMessage(''), 5000)
     } catch (err: any) {
       console.error('Error adding medication:', err)
@@ -466,11 +484,23 @@ export default function ViewMARForm() {
         .order('created_at', { ascending: true })
 
       if (medsError) throw medsError
-      setMedications(medsData || [])
+      
+      // Sort medications: vitals entries first, then regular medications
+      const sortedMeds = (medsData || []).sort((a, b) => {
+        const aIsVitals = a.medication_name === 'VITALS' || a.notes === 'Vital Signs Entry'
+        const bIsVitals = b.medication_name === 'VITALS' || b.notes === 'Vital Signs Entry'
+        
+        if (aIsVitals && !bIsVitals) return -1 // a (vitals) comes first
+        if (!aIsVitals && bIsVitals) return 1  // b (vitals) comes first
+        // Both are same type, maintain original order
+        return 0
+      })
+      
+      setMedications(sortedMeds)
 
       // Load administrations for all medications
-      if (medsData && medsData.length > 0) {
-        const medIds = medsData.map(m => m.id)
+      if (sortedMeds && sortedMeds.length > 0) {
+        const medIds = sortedMeds.map(m => m.id)
         const { data: adminData, error: adminError } = await supabase
           .from('mar_administrations')
           .select('*')
@@ -780,7 +810,41 @@ export default function ViewMARForm() {
                             </td>
                             {/* Hour */}
                             <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 align-top text-center text-xs">
-                              {isVitalsEntry ? '—' : (med.hour || 'N/A')}
+                              {isVitalsEntry ? '—' : (
+                                isEditing ? (
+                                  <EditableHourField
+                                    medication={med}
+                                    onUpdate={async (newHour) => {
+                                      try {
+                                        setSaving(true)
+                                        const { error } = await supabase
+                                          .from('mar_medications')
+                                          .update({ hour: newHour })
+                                          .eq('id', med.id)
+                                        
+                                        if (error) throw error
+                                        
+                                        // Update local state
+                                        setMedications(prev => prev.map(m => 
+                                          m.id === med.id ? { ...m, hour: newHour } : m
+                                        ))
+                                        
+                                        setMessage('Medication time updated successfully')
+                                        setTimeout(() => setMessage(''), 2000)
+                                      } catch (err) {
+                                        console.error('Error updating medication hour:', err)
+                                        setError('Failed to update medication time')
+                                        setTimeout(() => setError(''), 3000)
+                                        await loadMARForm() // Reload to get correct value
+                                      } finally {
+                                        setSaving(false)
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  med.hour || 'N/A'
+                                )
+                              )}
                             </td>
                             {/* Days 1-31 */}
                             {days.map(day => {
@@ -1188,6 +1252,8 @@ function AddMedicationOrVitalsForm({
       hour: string
       notes: string | null
       initials: string
+      frequency: number
+      times?: string[]
     }
     vitalsData?: {
       notes: string
@@ -1214,7 +1280,9 @@ function AddMedicationOrVitalsForm({
     stopDate: '',
     hour: defaultHour,
     notes: '',
-    initials: defaultInitials
+    initials: defaultInitials,
+    frequency: 1, // Number of times per day
+    times: [] as string[] // Array of times for each frequency
   })
   const [vitalsData, setVitalsData] = useState({
     notes: '',
@@ -1239,9 +1307,25 @@ function AddMedicationOrVitalsForm({
     e.preventDefault()
     
     if (entryType === 'medication') {
-      if (!medicationData.medicationName || !medicationData.dosage || !medicationData.startDate || !medicationData.hour) {
+      if (!medicationData.medicationName || !medicationData.dosage || !medicationData.startDate) {
         alert('Please fill in all required fields')
         return
+      }
+      // Validate times for frequency > 1
+      if (medicationData.frequency > 1) {
+        // Ensure times array is properly filled
+        const times = Array.from({ length: medicationData.frequency }, (_, i) => 
+          medicationData.times[i] || ''
+        )
+        if (times.some(t => !t.trim())) {
+          alert('Please enter all administration times')
+          return
+        }
+      } else {
+        if (!medicationData.hour) {
+          alert('Please enter administration time')
+          return
+        }
       }
       // Validate initials/legend selection
       if (initialsType === 'initials' && !medicationData.initials.trim()) {
@@ -1280,6 +1364,13 @@ function AddMedicationOrVitalsForm({
         ? vitalsData.initials.trim().toUpperCase()
         : selectedVitalsLegend
 
+      // Collect times for frequency > 1
+      const times = medicationData.frequency > 1 
+        ? Array.from({ length: medicationData.frequency }, (_, i) => 
+            medicationData.times[i] || medicationData.hour
+          )
+        : undefined
+
       await onSubmit({
         type: entryType,
         medicationData: entryType === 'medication' ? {
@@ -1289,7 +1380,9 @@ function AddMedicationOrVitalsForm({
           stopDate: medicationData.stopDate || null,
           hour: medicationData.hour,
           notes: medicationData.notes || null,
-          initials: finalInitials
+          initials: finalInitials,
+          frequency: medicationData.frequency,
+          times: times
         } : undefined,
         vitalsData: entryType === 'vitals' ? {
           notes: vitalsData.notes,
@@ -1307,7 +1400,9 @@ function AddMedicationOrVitalsForm({
         stopDate: '',
         hour: defaultHour,
         notes: '',
-        initials: defaultInitials
+        initials: defaultInitials,
+        frequency: 1,
+        times: []
       })
       setVitalsData({
         notes: '',
@@ -1420,17 +1515,76 @@ function AddMedicationOrVitalsForm({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Administration Time *
+              Frequency (Times per Day) *
             </label>
-            <input
-              type="text"
-              value={medicationData.hour}
-              onChange={(e) => setMedicationData({ ...medicationData, hour: e.target.value })}
+            <select
+              value={medicationData.frequency}
+              onChange={(e) => {
+                const freq = parseInt(e.target.value, 10)
+                // Initialize times array with current hour or empty strings
+                const newTimes = Array.from({ length: freq }, (_, i) => 
+                  medicationData.times[i] || (i === 0 ? medicationData.hour : '')
+                )
+                setMedicationData({ ...medicationData, frequency: freq, times: newTimes })
+              }}
               required
-              placeholder="e.g., 09:00 or 9:00 AM"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Format: HH:MM or HH:MM AM/PM</p>
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                <option key={num} value={num}>{num} time{num > 1 ? 's' : ''} per day</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Select how many times per day this medication should be given</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Administration Time(s) *
+            </label>
+            {medicationData.frequency === 1 ? (
+              <>
+                <input
+                  type="text"
+                  value={medicationData.hour}
+                  onChange={(e) => setMedicationData({ ...medicationData, hour: e.target.value })}
+                  required
+                  placeholder="e.g., 09:00 or 9:00 AM"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Format: HH:MM or HH:MM AM/PM</p>
+              </>
+            ) : (
+              <div className="space-y-2">
+                {Array.from({ length: medicationData.frequency }, (_, i) => (
+                  <div key={i}>
+                    <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                      Time {i + 1}:
+                    </label>
+                    <input
+                      type="text"
+                      value={medicationData.times[i] || ''}
+                      onChange={(e) => {
+                        const newTimes = [...medicationData.times]
+                        newTimes[i] = e.target.value
+                        // Ensure array is the right length
+                        while (newTimes.length < medicationData.frequency) {
+                          newTimes.push('')
+                        }
+                        setMedicationData({ 
+                          ...medicationData, 
+                          times: newTimes,
+                          hour: i === 0 ? e.target.value : medicationData.hour // Keep first time as default hour
+                        })
+                      }}
+                      required
+                      placeholder={`e.g., ${i === 0 ? '09:00' : i === 1 ? '13:00' : i === 2 ? '18:00' : '21:00'}`}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter the time for each administration. You can edit these later in the table.</p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -1701,6 +1855,43 @@ function AddMedicationOrVitalsForm({
         </button>
       </div>
     </form>
+  )
+}
+
+// Editable Hour Field Component
+function EditableHourField({ 
+  medication, 
+  onUpdate 
+}: { 
+  medication: MARMedication
+  onUpdate: (newHour: string) => Promise<void>
+}) {
+  const [localHour, setLocalHour] = useState(medication.hour || '')
+  const [isEditing, setIsEditing] = useState(false)
+
+  useEffect(() => {
+    setLocalHour(medication.hour || '')
+  }, [medication.hour])
+
+  const handleBlur = async () => {
+    setIsEditing(false)
+    const trimmed = localHour.trim()
+    if (trimmed !== medication.hour) {
+      await onUpdate(trimmed)
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      value={localHour}
+      onChange={(e) => setLocalHour(e.target.value)}
+      onFocus={() => setIsEditing(true)}
+      onBlur={handleBlur}
+      placeholder="e.g., 09:00"
+      className="w-full text-center text-xs border border-gray-300 rounded px-1 py-1 dark:bg-gray-700 dark:text-white dark:border-gray-600"
+      onClick={(e) => e.stopPropagation()}
+    />
   )
 }
 
