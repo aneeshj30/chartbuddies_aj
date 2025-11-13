@@ -11,24 +11,30 @@ export async function getUserProfile(userId?: string): Promise<UserProfile | nul
   const user = userId ? { id: userId } : await getCurrentUser()
   if (!user) return null
 
-  const { data, error } = await supabase
+  const targetUserId = userId || user.id
+
+  // First try direct query
+  let { data, error } = await supabase
     .from('user_profiles')
     .select('*')
-    .eq('id', userId || user.id)
+    .eq('id', targetUserId)
     .single()
 
-  if (error) {
-    console.error('Error fetching user profile:', error)
-    // If RLS error, try alternative approach
-    if (error.code === 'PGRST301' || error.message?.includes('policy')) {
-      console.log('RLS policy issue detected, attempting direct query...')
-      // This should work because user can always see own profile
+  // If that fails, try using the function that bypasses RLS
+  if (error || !data) {
+    console.log('Direct query failed, trying function...', error)
+    const { data: functionData, error: functionError } = await supabase
+      .rpc('get_user_profile_safe', { p_user_id: targetUserId })
+    
+    if (functionError) {
+      console.error('Function error:', functionError)
+      return null
     }
-    return null
-  }
-  
-  if (!data) {
-    console.log('No profile data returned for user:', userId || user.id)
+    
+    if (functionData && functionData.length > 0) {
+      return functionData[0] as UserProfile
+    }
+    
     return null
   }
   

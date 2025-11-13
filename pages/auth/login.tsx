@@ -43,66 +43,66 @@ export default function Login() {
 
     if (data.user) {
       // Wait a moment for any triggers to complete
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await new Promise(resolve => setTimeout(resolve, 500))
       
-      let profile = await getCurrentUserProfile()
+      // Try to get profile using function first (bypasses RLS)
+      let profile = null
       
-      // If profile doesn't exist, try to create it using the function (bypasses RLS)
+      // First, try using the function that bypasses RLS
+      const { data: functionProfile, error: functionError } = await supabase
+        .rpc('get_user_profile_safe', { p_user_id: data.user.id })
+      
+      if (!functionError && functionProfile && functionProfile.length > 0) {
+        profile = functionProfile[0]
+        console.log('Profile found via function')
+      } else {
+        // Fallback to regular query
+        profile = await getCurrentUserProfile()
+      }
+      
+      // If profile still doesn't exist, try to create it
       if (!profile) {
         console.log('Profile not found, attempting to create via function...')
         
         // Try using the database function first (bypasses RLS)
-        const { data: profileId, error: functionError } = await supabase
+        const { data: profileId, error: createError } = await supabase
           .rpc('create_user_profile_safe', {
             p_user_id: data.user.id,
             p_email: data.user.email!,
             p_full_name: data.user.user_metadata?.full_name || data.user.email || 'User'
           })
         
-        if (functionError) {
-          console.error('Function error:', functionError)
-          // If function doesn't exist, try direct insert
-          if (functionError.code === '42883' || functionError.message?.includes('does not exist')) {
-            console.log('Function not available, trying direct insert...')
-            const { error: createError } = await supabase
-              .from('user_profiles')
-              .insert({
-                id: data.user.id,
-                email: data.user.email!,
-                full_name: data.user.user_metadata?.full_name || data.user.email || 'User',
-                role: 'nurse',
-                hospital_id: null
-              })
-            
-            if (createError) {
-              console.error('Failed to create profile:', createError)
-              // If it's a duplicate key error, the profile exists - try to fetch it again
-              if (createError.code === '23505' || createError.message?.includes('duplicate')) {
-                console.log('Profile already exists, retrying fetch...')
-                await new Promise(resolve => setTimeout(resolve, 500))
-                profile = await getCurrentUserProfile()
-              } else {
-                setError('User profile not found. Please contact administrator.')
-                setLoading(false)
-                return
-              }
-            }
+        if (!createError && profileId) {
+          console.log('Profile created, fetching again...')
+          // Wait a moment and fetch again
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          // Try function again
+          const { data: newProfile } = await supabase
+            .rpc('get_user_profile_safe', { p_user_id: data.user.id })
+          
+          if (newProfile && newProfile.length > 0) {
+            profile = newProfile[0]
           } else {
-            console.error('Failed to create profile via function:', functionError)
-            // Don't fail immediately - try fetching again
-            await new Promise(resolve => setTimeout(resolve, 500))
             profile = await getCurrentUserProfile()
           }
-        } else {
-          // Function succeeded, wait and retry
-          await new Promise(resolve => setTimeout(resolve, 500))
-          profile = await getCurrentUserProfile()
-        }
-        
-        // If still no profile, try one more time
-        if (!profile) {
-          await new Promise(resolve => setTimeout(resolve, 500))
-          profile = await getCurrentUserProfile()
+        } else if (createError) {
+          // If it's a duplicate key error, profile exists - fetch it
+          if (createError.code === '23505' || createError.message?.includes('duplicate')) {
+            console.log('Profile already exists, fetching via function...')
+            await new Promise(resolve => setTimeout(resolve, 500))
+            
+            const { data: existingProfile } = await supabase
+              .rpc('get_user_profile_safe', { p_user_id: data.user.id })
+            
+            if (existingProfile && existingProfile.length > 0) {
+              profile = existingProfile[0]
+            } else {
+              profile = await getCurrentUserProfile()
+            }
+          } else {
+            console.error('Failed to create profile:', createError)
+          }
         }
       }
       
