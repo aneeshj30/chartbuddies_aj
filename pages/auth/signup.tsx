@@ -65,6 +65,7 @@ export default function Signup() {
       // Check if user is authenticated (has a session)
       // If email confirmation is required, there might not be a session
       let isAuthenticated = !!authData.session
+      let currentSession = authData.session
       
       // If no session and email confirmation is disabled, sign in immediately
       if (!isAuthenticated) {
@@ -79,6 +80,17 @@ export default function Signup() {
           console.log('No immediate session, waiting for trigger to create profile...')
         } else {
           isAuthenticated = !!signInData.session
+          currentSession = signInData.session
+        }
+      }
+      
+      // Ensure we have a session before proceeding
+      if (!currentSession) {
+        // Try one more time to get session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          currentSession = session
+          isAuthenticated = true
         }
       }
 
@@ -189,8 +201,17 @@ export default function Signup() {
           }
         }
 
+        // Ensure we have a session before creating hospital
+        if (!currentSession) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session) {
+            throw new Error('Authentication session not available. Please try signing up again.')
+          }
+          currentSession = session
+        }
+        
         // Create hospital using the safe function (bypasses RLS)
-        console.log('Creating hospital via function...')
+        console.log('Creating hospital via function...', { hasSession: !!currentSession, userId: currentSession?.user?.id })
         const { data: hospitalData, error: hospitalError } = await supabase
           .rpc('create_hospital_safe', {
             p_name: formData.hospitalName,
