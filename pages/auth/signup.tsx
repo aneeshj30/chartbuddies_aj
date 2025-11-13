@@ -329,7 +329,7 @@ export default function Signup() {
           console.error('Profile update error:', profileError)
           // Don't throw error - hospital was created successfully
           // User can update their profile later
-          setMessage('Hospital created successfully! However, we could not set your admin role. Please contact support or try logging in.')
+          setError('Hospital created successfully! However, we could not set your admin role. Please contact support or try logging in.')
           setLoading(false)
           return
         }
