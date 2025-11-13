@@ -14,6 +14,17 @@ const key = supabaseAnonKey || (typeof window === 'undefined'
   ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTIwMDAsImV4cCI6MTk2MDc2ODAwMH0.placeholder' // Build-time placeholder JWT
   : '')
 
+// Get the site URL for redirects
+const getSiteUrl = () => {
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+  // Server-side: use environment variable or fallback
+  return process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}` 
+    : 'http://localhost:3000'
+}
+
 // Create Supabase client
 // Note: During build, if env vars aren't set, this will use placeholders
 // At runtime on Vercel, the actual environment variables will be used
@@ -21,7 +32,8 @@ export const supabase = createClient(url, key, {
   auth: {
     persistSession: typeof window !== 'undefined',
     autoRefreshToken: typeof window !== 'undefined',
-    detectSessionInUrl: typeof window !== 'undefined'
+    detectSessionInUrl: typeof window !== 'undefined',
+    redirectTo: getSiteUrl()
   }
 })
 

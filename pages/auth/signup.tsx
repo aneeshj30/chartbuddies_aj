@@ -44,10 +44,18 @@ export default function Signup() {
 
     try {
       // Step 1: Create auth user
+      // Get the redirect URL - use production URL if available, otherwise current origin
+      const redirectUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/auth/login`
+        : process.env.NEXT_PUBLIC_SITE_URL 
+          ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/login`
+          : 'https://your-production-url.vercel.app/auth/login'
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
+          emailRedirectTo: redirectUrl,
           data: {
             full_name: formData.fullName
           }
