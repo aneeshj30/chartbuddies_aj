@@ -421,7 +421,13 @@ export default function Signup() {
             </div>
           )}
 
-          {step === 1 ? (
+          {success ? (
+            <div className="text-center">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Once you verify your email, you can log in and start using Chartbuddies.
+              </p>
+            </div>
+          ) : step === 1 ? (
             <form onSubmit={handleStep1Submit} className="space-y-6">
               <div>
                 <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -496,7 +502,7 @@ export default function Signup() {
                 Continue
               </button>
             </form>
-          ) : (
+          ) : success ? null : (
             <form onSubmit={handleSignup} className="space-y-6">
               <div className="mb-4">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
