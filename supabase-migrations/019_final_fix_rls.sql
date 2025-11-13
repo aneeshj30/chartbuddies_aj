@@ -68,8 +68,9 @@ BEGIN
   END IF;
   
   -- If v_user_id is still NULL, that's okay - we'll proceed anyway
-  -- The RLS policy will ensure only authenticated users can insert
+  -- Since this function uses SECURITY DEFINER, it bypasses RLS
   -- This handles the signup flow where session might not be fully established yet
+  -- The function itself is the security boundary - only authenticated users can call it
   
   -- Create hospital (bypasses RLS due to SECURITY DEFINER)
   INSERT INTO hospitals (name, facility_type, invite_code)
