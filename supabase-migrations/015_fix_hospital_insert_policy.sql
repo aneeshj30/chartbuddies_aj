@@ -5,6 +5,10 @@
 DROP POLICY IF EXISTS "Users can create hospitals" ON hospitals;
 
 -- Recreate with proper security checks
+-- Note: This policy allows authenticated users to create hospitals if:
+-- 1. They don't have a hospital_id (new signups)
+-- 2. They are superadmins
+-- The policy handles cases where profile might not exist yet (new signups)
 CREATE POLICY "Users can create hospitals" ON hospitals
   FOR INSERT
   WITH CHECK (
@@ -12,14 +16,15 @@ CREATE POLICY "Users can create hospitals" ON hospitals
     auth.uid() IS NOT NULL 
     AND
     (
-      -- Allow if user doesn't have a hospital_id yet (for new signups/auto-fix)
-      EXISTS (
+      -- Allow if user profile doesn't exist (new signup) OR has NULL hospital_id
+      -- This handles the signup flow where profile might be created but hospital_id is NULL
+      NOT EXISTS (
         SELECT 1 FROM user_profiles
         WHERE user_profiles.id = auth.uid()
-        AND user_profiles.hospital_id IS NULL
+        AND user_profiles.hospital_id IS NOT NULL
       )
       OR
-      -- Allow superadmins to create hospitals
+      -- Allow superadmins to create hospitals (even if they have a hospital_id)
       EXISTS (
         SELECT 1 FROM user_profiles
         WHERE user_profiles.id = auth.uid()
